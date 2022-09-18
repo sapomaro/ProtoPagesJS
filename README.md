@@ -10,11 +10,11 @@ Examples of usage:
 	<!-- Example 1: Wrap your variables with %{ }% -->
 	<div style="color: %{color}%">%{text}% %{color}%!</div>
 	
-	<!-- Example 2: Each of your partials (components with HTML tags) 
+	<!-- Example 2: Each of your partials (components with HTML tags)
 		 should be wrapped in an HTML element (later this will be improved) -->
 	<div>%{ Partial }%</div>
 	
-	<!-- Example 3: Add parentheses with JSON after your element
+	<!-- Example 3: Add parentheses with JSON after your element to pass properties
 		 (you should use double quotes for properties and text values) -->
 	<div>%{ FancyLink({ "text": "Click me", "url": "/" }) }%</div>
 	
