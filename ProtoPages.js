@@ -4,8 +4,8 @@
 ## Dynamic template builder for the web powered by JavaScript
 
 https://github.com/sapomaro/ProtoPagesJS
-*/
 
+*/
 
 const ProtoPages = {};
 
@@ -157,53 +157,78 @@ ProtoPages.compileAll = (context = window) => {
 	traverseChildren(document.head);
 	traverseChildren(document.body);
 	
-	if (document.readyState === 'complete') {
-		runTasks(compileTasks);
-	}
+	runTasks(tasks.compile);
 };
 
 ///////////////////
 /* Load Handling */
 ///////////////////
 
-const loadTasks = [];
-const compileTasks = [];
+let loaded = false;
 
-const runTasks = (tasks) => {
-	for (const { task, context } of tasks) {
-		task(context);
+const runTasks = function() {
+	for (let i = 0; i < arguments.length; ++i) {
+		for (const task of arguments[i]) {
+			task();
+		}
 	}
 };
-ProtoPages.onload = (task, context = window) => {
-	if (document.readyState === 'interactive' || document.readyState === 'complete') {
-		task(context);
-	}
-	loadTasks.push({ task, context });
-};
-ProtoPages.oncompiled = (task, context = window) => {
-	compileTasks.push({ task, context });
+
+const tasks = {
+	init: [],
+	load: [],
+	compile: []
 };
 
-ProtoPages.init = (context = window) => {
-	if (document.readyState === 'interactive' || document.readyState === 'complete') {
-		runTasks(loadTasks);
+ProtoPages.on = (event, task) => {
+	if (event === 'init' || event === 'load') {
+		if (DOMReady()) {
+			task();
+			loaded = true;
+		}
+	}
+	tasks[event].push(task);
+};
+
+const DOMReady = () => {
+	if (document.readyState === 'interactive') {
+		if (typeof document.body !== 'undefined' && typeof document.head !== 'undefined') {
+			return true;
+		}
+	}
+	else if (document.readyState === 'complete') {
+		return true;
+	}
+	else {
+		return false;
+	}
+};
+
+ProtoPages.init = () => {
+	if (DOMReady()) {
+		runTasks(tasks.init, tasks.load);
+		loaded = true;
 	}
 	else {
 		window.addEventListener('DOMContentLoaded', () => {
-			runTasks(loadTasks);
+			if (DOMReady()) {
+				runTasks(tasks.init, tasks.load);
+				loaded = true;
+			}
 		});
 		window.addEventListener('load', () => {
-			runTasks(loadTasks);
+			if (!loaded) {
+				runTasks(tasks.init, tasks.load);
+				loaded = true;
+			}
 		});
 	}
 };
 
 
 ProtoPages.compile = (context = window) => {
-	ProtoPages.onload(() => {
-		setTimeout(() => { // timer to make compileAll() run in the end
-			ProtoPages.compileAll(context);
-		}, 1);
+	ProtoPages.on('load', () => {
+		ProtoPages.compileAll(context);
 	});
 };
 
