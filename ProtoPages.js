@@ -1,5 +1,5 @@
 /*
-# ProtoPagesJS v0.0.1a
+# ProtoPagesJS v0.0.2a
 
 ## Dynamic template builder for the web powered by JavaScript
 
@@ -8,63 +8,77 @@ https://github.com/sapomaro/ProtoPagesJS
 */
 
 const ProtoPages = {};
-
+const PP = ProtoPages;
 
 ///////////////////////
 /* Pattern Resolving */
 ///////////////////////
 
-let templateContext;
+PP.context = {};
 
-const templatePattern = /%\{\s?([^]*?)\s?\}%/g;
-const templateSubpatterns = {
-	jsonFunc: /^([^\( ]+)\(\s?([\{\[][^]*?[\}\]])(\.\.\.)?\s?\)$/
+const PP_PATTERN = /%\{\s?([^]*?)\s?\}%/g;
+const PP_SUBPATTERN_JSONFUNC = /^([^\( ]+)\(\s?([\{\[][^]*?[\}\]])(\.\.\.)?\s?\)$/;
+
+const PP_PARTIAL_PATTERN = /^<%>([^]*?)<\/%>$/g;
+const PP_PARTIAL_TAG_OPEN = '<%>';
+const PP_PARTIAL_TAG_CLOSE = '</%>';
+
+const striptPartialTags = (str) => {
+	return str.replace(/<\/?%>/g, '');
 };
 
-const partial = {};
-partial.pattern = /^<%>([^]*?)<\/%>$/g;
-partial.stripPattern = /<\/?%>/g;
-partial.tags = { start: '<%>', end: '</%>' }
-partial.strip = (str) => {
-	return str.replace(partial.stripPattern, '');
+PP.JSON = {};
+PP.JSON.parse = (data) => {
+	try {
+		return JSON.parse(data);
+	}
+	catch (error) {
+		console.log(data);
+		console.error(error);
+		return {};
+	}
+};
+PP.JSON.stringify = (data) => {
+	try {
+		return JSON.stringify(data);
+	}
+	catch (error) {
+		console.log(data);
+		console.error(error);
+		return '{}';
+	}
 };
 
 const resolvePattern = (pattern) => {
-	pattern = pattern.trim();
-	let matches,
-		context = templateContext,
-		result;
+	let context = PP.context;
+	let matches;
+	let result;
 	
-	templateSubpatterns.jsonFunc.lastIndex = 0;
-	if (matches = templateSubpatterns.jsonFunc.exec(pattern)) {
+	PP_SUBPATTERN_JSONFUNC.lastIndex = 0;
+	if (matches = PP_SUBPATTERN_JSONFUNC.exec(pattern)) {
 		const func = matches[1];
-		let json = matches[2]
+		const jsonStr = matches[2]
 			.replace(/([\{,\"])\s*(\\[\\tn]+)\s*([\},\"])/g, "$1 $3") // cleans up the mess from Parcel
 			.replace(/&quot;/ig, '"');
+		const unwrapRule = matches[3];
 
-		try {
-			json = JSON.parse(json);
-		}
-		catch (error) {
-			console.log(json);
-			console.log(error);
-			json = {};
-		}
+		const jsonObj = PP.JSON.parse(jsonStr);
+
 		if (typeof context[func] === 'function') {
-			if (matches[3] && matches[3] === '...' && json instanceof Array) {
+			if (unwrapRule && unwrapRule === '...' && jsonObj instanceof Array) {
 				result = '';
-				for (const item of json) {
+				for (const item of jsonObj) {
 					result += context[func](item);
 				}
 			}
 			else {
-				result = context[func](json);
+				result = context[func](jsonObj);
 			}
-			result = partial.tags.start + result + partial.tags.end;
+			result = PP_PARTIAL_TAG_OPEN + result + PP_PARTIAL_TAG_CLOSE;
 		}
 	}
 	else {
-		let props = pattern.trim().split('.');
+		let props = pattern.split('.');
 		for (let i = 0; i < props.length; ++i) {
 			if (typeof context[props[i]] !== 'undefined') {
 				context = context[props[i]];
@@ -72,36 +86,32 @@ const resolvePattern = (pattern) => {
 		}
 		result = context;
 		if (typeof result === 'function') {
-			result = partial.tags.start + result() + partial.tags.end;
+			result = PP_PARTIAL_TAG_OPEN + result() + PP_PARTIAL_TAG_CLOSE;
 		}
 	}
-		
-	
 	if (typeof result === 'string' || typeof result === 'number') {
 		return result;
 	}
-	else {
-		return null;
-	}
+	return null;
 };
 
 const resolveString = (str) => {
-	templatePattern.lastIndex = 0;
-	if (!templatePattern.test(str)) { 
+	PP_PATTERN.lastIndex = 0;
+	if (!PP_PATTERN.test(str)) { 
 		return null; 
 	}
-	let matches, 
-		asset, 
-		old = str;
+	let matches;
+	let asset;
+	let old = str;
 		
-	templatePattern.lastIndex = 0;
-	while (matches = templatePattern.exec(str)) {
-		asset = resolvePattern(matches[1]);
+	PP_PATTERN.lastIndex = 0;
+	while (matches = PP_PATTERN.exec(str)) {
+		asset = resolvePattern(matches[1].trim());
 		if (asset !== null) {
 			str = str.replace(matches[0], asset);
 			// subtract pattern length to start next exec from new insertion
 			// allows resolving nested patterns
-			templatePattern.lastIndex -= matches[0].length; 
+			PP_PATTERN.lastIndex -= matches[0].length; 
 			
 		}
 	}
@@ -110,11 +120,6 @@ const resolveString = (str) => {
 	}
 	return null;
 };
-
-
-////////////////////
-/* DOM Traversing */
-////////////////////
 
 const traverseChildren = (node) => {
 	if (!node.childNodes) { return; }
@@ -129,10 +134,10 @@ const traverseChildren = (node) => {
 
 			if (str !== null) {
 				let matches;
-				partial.pattern.lastIndex = 0;
-				if ((matches = partial.pattern.exec(str.trim())) && node.childNodes.length === 1) {
+				PP_PARTIAL_PATTERN.lastIndex = 0;
+				if ((matches = PP_PARTIAL_PATTERN.exec(str.trim())) && node.childNodes.length === 1) {
 					
-					node.innerHTML = partial.strip(matches[1]);						
+					node.innerHTML = striptPartialTags(matches[1]);						
 				}
 				else {
 					node.childNodes[i].textContent = str;
@@ -151,9 +156,8 @@ const traverseAttributes = (node) => {
 	}
 };
 
-
-ProtoPages.compileAll = (context = window) => {
-	templateContext = context;
+PP.compileAll = (context = window) => {
+	PP.context = context;
 	traverseChildren(document.head);
 	traverseChildren(document.body);
 	
@@ -164,7 +168,13 @@ ProtoPages.compileAll = (context = window) => {
 /* Load Handling */
 ///////////////////
 
-let loaded = false;
+let DOMLoaded = false;
+
+const tasks = {
+	init: [],
+	load: [],
+	compile: []
+};
 
 const runTasks = function() {
 	for (let i = 0; i < arguments.length; ++i) {
@@ -174,27 +184,11 @@ const runTasks = function() {
 	}
 };
 
-const tasks = {
-	init: [],
-	load: [],
-	compile: []
-};
-
-ProtoPages.on = (event, task) => {
-	if (event === 'init' || event === 'load') {
-		if (DOMReady()) {
-			task();
-			loaded = true;
-		}
-	}
-	tasks[event].push(task);
-};
-
 const DOMReady = () => {
-	if (document.readyState === 'interactive') {
-		if (typeof document.body !== 'undefined' && typeof document.head !== 'undefined') {
+	if (document.readyState === 'interactive'
+		&& typeof document.body !== 'undefined' 
+		&& typeof document.head !== 'undefined') {
 			return true;
-		}
 	}
 	else if (document.readyState === 'complete') {
 		return true;
@@ -204,39 +198,43 @@ const DOMReady = () => {
 	}
 };
 
-ProtoPages.init = () => {
+PP.on = (event, task) => {
+	if (event === 'init' || event === 'load') {
+		if (DOMReady()) {
+			task();
+			DOMLoaded = true;
+		}
+	}
+	tasks[event].push(task);
+};
+
+PP.init = () => {
 	if (DOMReady()) {
 		runTasks(tasks.init, tasks.load);
-		loaded = true;
+		DOMLoaded = true;
 	}
 	else {
 		window.addEventListener('DOMContentLoaded', () => {
 			if (DOMReady()) {
 				runTasks(tasks.init, tasks.load);
-				loaded = true;
+				DOMLoaded = true;
 			}
 		});
 		window.addEventListener('load', () => {
-			if (!loaded) {
+			if (!DOMLoaded) {
 				runTasks(tasks.init, tasks.load);
-				loaded = true;
+				DOMLoaded = true;
 			}
 		});
 	}
 };
 
-
-ProtoPages.compile = (context = window) => {
-	ProtoPages.on('load', () => {
-		ProtoPages.compileAll(context);
+PP.compile = (context = window) => {
+	PP.on('load', () => {
+		PP.compileAll(context);
 	});
 };
 
+PP.init();
 
-ProtoPages.init();
-
-
-export default ProtoPages;
-
-
-
+export { ProtoPages };
